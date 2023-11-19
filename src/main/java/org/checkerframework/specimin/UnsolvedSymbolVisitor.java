@@ -110,8 +110,11 @@ public class UnsolvedSymbolVisitor extends ModifierVisitor<Void> {
    */
   private boolean insideAnObjectCreation = false;
 
-  /** This instance maps the name of a synthetic method with its synthetic class */
-  private final Map<String, UnsolvedClass> syntheticMethodAndClass = new HashMap<>();
+  /**
+   * This instance maps the name of the synthetic return type of a method with the class where that
+   * method belongs
+   */
+  private final Map<String, UnsolvedClass> syntheticMethodReturnTypeAndClass = new HashMap<>();
 
   /**
    * This is to check if the current synthetic files are enough to prevent UnsolvedSymbolException
@@ -780,7 +783,7 @@ public class UnsolvedSymbolVisitor extends ModifierVisitor<Void> {
     UnsolvedClass missingClass = new UnsolvedClass(className, classAndPackageMap.get(className));
     UnsolvedMethod thisMethod = new UnsolvedMethod(methodName, returnType, listOfParameters);
     missingClass.addMethod(thisMethod);
-    syntheticMethodAndClass.put(methodName, missingClass);
+    syntheticMethodReturnTypeAndClass.put(returnType, missingClass);
     this.updateMissingClass(missingClass);
 
     // if the return type is not specified, a synthetic return type will be created. This part of
@@ -852,7 +855,7 @@ public class UnsolvedSymbolVisitor extends ModifierVisitor<Void> {
     UnsolvedClass missingClass = new UnsolvedClass(className, packageName);
     UnsolvedMethod thisMethod = new UnsolvedMethod(methodName, returnType, argumentsList);
     missingClass.addMethod(thisMethod);
-    syntheticMethodAndClass.put(methodName, missingClass);
+    syntheticMethodReturnTypeAndClass.put(returnType, missingClass);
     this.updateMissingClass(missingClass);
   }
 
@@ -1445,7 +1448,7 @@ public class UnsolvedSymbolVisitor extends ModifierVisitor<Void> {
     UnsolvedClass classThatContainMethod = new UnsolvedClass(className, packageName);
     newMethod.setStatic();
     classThatContainMethod.addMethod(newMethod);
-    syntheticMethodAndClass.put(newMethod.toString(), classThatContainMethod);
+    syntheticMethodReturnTypeAndClass.put(thisReturnType, classThatContainMethod);
     @SuppressWarnings(
         "signature") // thisReturnType is a @ClassGetSimpleName, so combining it with the
     // packageName will give us the @FullyQualifiedName
@@ -1464,11 +1467,7 @@ public class UnsolvedSymbolVisitor extends ModifierVisitor<Void> {
   public void updateTypes(
       Map<@ClassGetSimpleName String, @ClassGetSimpleName String> typeToCorrect) {
     for (String incorrectType : typeToCorrect.keySet()) {
-      // convert MethodNameReturnType to methodName
-      String involvedMethod =
-          incorrectType.substring(0, 1).toLowerCase()
-              + incorrectType.substring(1).replace("ReturnType", "");
-      UnsolvedClass relatedClass = syntheticMethodAndClass.get(involvedMethod);
+      UnsolvedClass relatedClass = syntheticMethodReturnTypeAndClass.get(incorrectType);
       if (relatedClass != null) {
         for (UnsolvedClass syntheticClass : missingClass) {
           if (syntheticClass.getClassName().equals(relatedClass.getClassName())
