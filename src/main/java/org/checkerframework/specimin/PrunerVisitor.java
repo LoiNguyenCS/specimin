@@ -5,6 +5,7 @@ import com.github.javaparser.ast.ImportDeclaration;
 import com.github.javaparser.ast.Node;
 import com.github.javaparser.ast.body.ClassOrInterfaceDeclaration;
 import com.github.javaparser.ast.body.ConstructorDeclaration;
+import com.github.javaparser.ast.body.EnumDeclaration;
 import com.github.javaparser.ast.body.FieldDeclaration;
 import com.github.javaparser.ast.body.MethodDeclaration;
 import com.github.javaparser.ast.body.VariableDeclarator;
@@ -15,6 +16,7 @@ import com.github.javaparser.ast.expr.Expression;
 import com.github.javaparser.ast.expr.IntegerLiteralExpr;
 import com.github.javaparser.ast.expr.LongLiteralExpr;
 import com.github.javaparser.ast.expr.NullLiteralExpr;
+import com.github.javaparser.ast.expr.ObjectCreationExpr;
 import com.github.javaparser.ast.type.PrimitiveType;
 import com.github.javaparser.ast.type.Type;
 import com.github.javaparser.ast.visitor.ModifierVisitor;
@@ -160,15 +162,19 @@ public class PrunerVisitor extends ModifierVisitor<Void> {
 
   @Override
   public Visitable visit(FieldDeclaration fieldDecl, Void p) {
-    try {
-      fieldDecl.resolve();
-    } catch (UnsolvedSymbolException e) {
+    if (!isASolvableField(fieldDecl)) {
       // The current class is employed by the target methods, although not all of its members are
       // utilized. It's not surprising for unused members to remain unresolved.
       fieldDecl.remove();
       return fieldDecl;
     }
-    String classFullName = fieldDecl.resolve().declaringType().getQualifiedName();
+    String classFullName;
+    try {
+      classFullName = tryToGetClassNameOfFields(fieldDecl);
+    } catch (UnsolvedSymbolException e) {
+      // The same reason as explained above.
+      return super.visit(fieldDecl, p);
+    }
     boolean isFinal = fieldDecl.isFinal();
     Iterator<VariableDeclarator> iterator = fieldDecl.getVariables().iterator();
     while (iterator.hasNext()) {
@@ -221,6 +227,57 @@ public class PrunerVisitor extends ModifierVisitor<Void> {
       }
     } else {
       return new NullLiteralExpr();
+    }
+  }
+
+  /**
+   * Given a FieldDeclaration expression, this method checks if that FieldDeclaration is solvable.
+   *
+   * @param fieldDecl a FieldDeclaration instance.
+   * @return true if fieldDecl could be solved, false otherwise.
+   */
+  public boolean isASolvableField(FieldDeclaration fieldDecl) {
+    for (VariableDeclarator varDecl : fieldDecl.getVariables()) {
+      try {
+        varDecl.resolve();
+      } catch (UnsolvedSymbolException e) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  private boolean insideAnonymousClass(Node node) {
+    Node parent = node.getParentNode().get();
+    System.out.println("Get in loop");
+    if (parent instanceof ObjectCreationExpr) {
+      System.out.println("Got out loop1");
+      return true;
+    }
+    if (parent instanceof ClassOrInterfaceDeclaration) {
+      System.out.println("Got out loop1");
+      return false;
+    }
+    // this recursive method is safe because as we're traversing back, we will definitely encounter
+    // a class or an object creation, as all elements in the Java language exist in some classes.
+    return insideAnonymousClass(parent);
+  }
+
+  public String tryToGetClassNameOfFields(FieldDeclaration fieldDecl) {
+    Node parentNode = fieldDecl.getParentNode().get();
+    if (insideAnonymousClass(fieldDecl)) {
+      throw new UnsolvedSymbolException("Inside anonymous class");
+    }
+    try {
+      if (parentNode instanceof ClassOrInterfaceDeclaration) {
+        return ((ClassOrInterfaceDeclaration) parentNode).resolve().getQualifiedName();
+      } else if (parentNode instanceof EnumDeclaration) {
+        return ((EnumDeclaration) parentNode).resolve().getQualifiedName();
+      } else {
+        throw new RuntimeException("Field with unexpected property: " + fieldDecl);
+      }
+    } catch (UnsolvedSymbolException e) {
+      throw e;
     }
   }
 }

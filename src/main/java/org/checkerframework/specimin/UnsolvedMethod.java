@@ -66,6 +66,15 @@ public class UnsolvedMethod {
     return name;
   }
 
+  /**
+   * Get the list of parameters for this method
+   *
+   * @return the value of parameterList
+   */
+  public List<String> getParameterList() {
+    return parameterList;
+  }
+
   /** Set isStatic to true */
   public void setStatic() {
     isStatic = true;
@@ -102,5 +111,19 @@ public class UnsolvedMethod {
         + "("
         + arguments
         + ") {\n        throw new Error();\n    }\n";
+  }
+
+  /**
+   * This method checks if the current instance of UnsolvedMethod is equal to another instance of
+   * UnsolvedMethod.
+   *
+   * @param other the other instance of UnsolvedMethod
+   * @return true if two instances are equal
+   */
+  public boolean equalTo(UnsolvedMethod other) {
+    return isStatic == other.isStatic
+        && other.getName().equals(this.getName())
+        && other.getReturnType().equals(this.getReturnType())
+        && other.getParameterList().equals(this.getParameterList());
   }
 }

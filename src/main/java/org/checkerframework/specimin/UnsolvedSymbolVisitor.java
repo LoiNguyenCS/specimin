@@ -458,6 +458,7 @@ public class UnsolvedSymbolVisitor extends ModifierVisitor<Void> {
       // nothing to do here. A var type could never be solved.
       return super.visit(decl, p);
     }
+    System.out.println(declType);
     try {
       declType.resolve();
     } catch (UnsolvedSymbolException | UnsupportedOperationException e) {
@@ -630,6 +631,7 @@ public class UnsolvedSymbolVisitor extends ModifierVisitor<Void> {
       // for a qualified name field access such as org.sample.MyClass.field, org.sample will also be
       // considered FieldAccessExpr.
       if (isAClassPath(node.getScope().toString())) {
+        System.out.println(node);
         this.gotException = true;
       }
     }
@@ -638,11 +640,11 @@ public class UnsolvedSymbolVisitor extends ModifierVisitor<Void> {
 
   @Override
   public Visitable visit(MethodCallExpr method, Void p) {
-    if (canBeSolved(method) && isFromAJarFile(method)) {
+    if (isASolvableMethodCall(method) && isFromAJarFile(method)) {
       updateClassesFromJarSourcesForMethodCall(method);
       return super.visit(method, p);
     }
-    if (isASuperCall(method) && !canBeSolved(method)) {
+    if (isASuperCall(method) && !isASolvableMethodCall(method)) {
       updateSyntheticClassForSuperCall(method);
       return super.visit(method, p);
     }
@@ -650,16 +652,17 @@ public class UnsolvedSymbolVisitor extends ModifierVisitor<Void> {
     if (!canSolveParameters(method)) {
       return super.visit(method, p);
     }
+    // the next two condition clauses check if the method is static
     if (isAnUnsolvedStaticMethodCalledByAQualifiedClassName(method)) {
       updateClassSetWithQualifiedStaticMethodCall(
           method.toString(), getArgumentsFromMethodCall(method));
-    } else if (calledByAnIncompleteSyntheticClass(method)) {
-      @ClassGetSimpleName String incompleteClassName = getSyntheticClass(method);
-      updateUnsolvedClassWithMethod(method, incompleteClassName, "");
     } else if (unsolvedAndCalledByASimpleClassName(method)) {
       String methodFullyQualifiedCall = toFullyQualifiedCall(method);
       updateClassSetWithQualifiedStaticMethodCall(
           methodFullyQualifiedCall, getArgumentsFromMethodCall(method));
+    } else if (calledByAnIncompleteSyntheticClass(method)) {
+      @ClassGetSimpleName String incompleteClassName = getSyntheticClass(method);
+      updateUnsolvedClassWithMethod(method, incompleteClassName, "");
     } else if (staticImportedMembersMap.containsKey(method.getNameAsString())) {
       String methodName = method.getNameAsString();
       @FullyQualifiedName String className = staticImportedMembersMap.get(methodName);
@@ -669,11 +672,12 @@ public class UnsolvedSymbolVisitor extends ModifierVisitor<Void> {
           methodFullyQualifiedCall + "()", getArgumentsFromMethodCall(method));
     }
     boolean needToSetException =
-        !canBeSolved(method)
+        !isASolvableMethodCall(method)
             || calledByAnUnsolvedSymbol(method)
             || calledByAnIncompleteSyntheticClass(method)
             || isAnUnsolvedStaticMethodCalledByAQualifiedClassName(method);
     if (needToSetException) {
+      System.out.println(method);
       this.gotException = true;
     }
     return super.visit(method, p);
@@ -730,6 +734,7 @@ public class UnsolvedSymbolVisitor extends ModifierVisitor<Void> {
       }
       classToUpdate.setNumberOfTypeVariables(numberOfArguments);
       updateMissingClass(classToUpdate);
+      System.out.println(typeExpr);
       gotException = true;
     }
     return super.visit(typeExpr, p);
@@ -755,6 +760,7 @@ public class UnsolvedSymbolVisitor extends ModifierVisitor<Void> {
     catch (UnsolvedSymbolException | UnsupportedOperationException e) {
       if (!parameter.getType().isUnknownType()) {
         handleParameterResolveFailure(parameter);
+        System.out.println(parameter);
         gotException = true;
       }
     }
@@ -772,6 +778,7 @@ public class UnsolvedSymbolVisitor extends ModifierVisitor<Void> {
       return super.visit(newExpr, p);
     }
     this.gotException = true;
+    System.out.println(newExpr);
     try {
       List<String> argumentsCreation = getArgumentsFromObjectCreation(newExpr);
       UnsolvedMethod creationMethod = new UnsolvedMethod("", type, argumentsCreation);
@@ -1276,6 +1283,8 @@ public class UnsolvedSymbolVisitor extends ModifierVisitor<Void> {
         parametersList.add(((ResolvedReferenceType) type).getQualifiedName());
       } else if (type.isPrimitive()) {
         parametersList.add(type.describe());
+      } else if (type.isUnionType()) {
+        parametersList.add("Exception");
       }
     }
     return parametersList;
@@ -1316,6 +1325,18 @@ public class UnsolvedSymbolVisitor extends ModifierVisitor<Void> {
     }
     Expression callerExpression = caller.get();
     return !canBeSolved(callerExpression);
+  }
+
+  public boolean isASolvableMethodCall(MethodCallExpr expr) {
+    try {
+      expr.resolve();
+      return true;
+    } catch (UnsolvedSymbolException | UnsupportedOperationException e) {
+      if (e instanceof UnsolvedSymbolException) {
+        return false;
+      }
+      return true;
+    }
   }
 
   /**
@@ -1435,11 +1456,8 @@ public class UnsolvedSymbolVisitor extends ModifierVisitor<Void> {
           // class. In that case, no need to add another one.
           boolean alreadyHad = false;
           for (UnsolvedMethod classMethod : e.getMethods()) {
-            if (classMethod.getReturnType().equals(method.getReturnType())) {
-              if (classMethod.getName().equals(method.getName())) {
-                alreadyHad = true;
-                break;
-              }
+            if (classMethod.equalTo(method)) {
+              alreadyHad = true;
             }
           }
           if (!alreadyHad) {

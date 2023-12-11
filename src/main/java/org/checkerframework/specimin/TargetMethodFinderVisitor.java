@@ -285,16 +285,7 @@ public class TargetMethodFinderVisitor extends ModifierVisitor<Void> {
     if (!insideTargetMethod) {
       return super.visit(type, p);
     }
-    try {
-      usedClass.add(type.resolve().getQualifiedName());
-    }
-    // if the type has a fully-qualified form, JavaParser also consider other components rather than
-    // the class name as ClassOrInterfaceType. For example, if the type is org.A.B, then JavaParser
-    // will also consider org and org.A as ClassOrInterfaceType.
-    // if type is a type variable, we will get an UnsupportedOperation Exception.
-    catch (UnsolvedSymbolException | UnsupportedOperationException e) {
-      return super.visit(type, p);
-    }
+    updateUsedClassWithTypes(type);
     return super.visit(type, p);
   }
 
@@ -406,5 +397,33 @@ public class TargetMethodFinderVisitor extends ModifierVisitor<Void> {
       usedClass.add(classFullName);
       usedMembers.add(classFullName + "#" + expr.getNameAsString());
     }
+  }
+
+  public void updateUsedClassWithTypes(ClassOrInterfaceType type) {
+    String typeFullName;
+    try {
+      typeFullName = type.resolve().getQualifiedName();
+      usedClass.add(typeFullName);
+    } catch (UnsolvedSymbolException | UnsupportedOperationException e) {
+      // if the type has a fully-qualified form, JavaParser also consider other components rather
+      // than
+      // the class name as ClassOrInterfaceType. For example, if the type is org.A.B, then
+      // JavaParser
+      // will also consider org and org.A as ClassOrInterfaceType.
+      // if type is a type variable, we will get an UnsupportedOperation Exception.
+      return;
+    }
+    while (typeFullName.contains(".")) {
+      System.out.println("Get in loop");
+      typeFullName = typeFullName.substring(0, typeFullName.lastIndexOf("."));
+      // in case this type is an inner class, we also need to add the outer class to usedClass.
+      if (UnsolvedSymbolVisitor.isAClassPath(typeFullName)) {
+        usedClass.add(typeFullName);
+      } else {
+        System.out.println("Get out loop");
+        break;
+      }
+    }
+    System.out.println("Get out loop");
   }
 }
