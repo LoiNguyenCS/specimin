@@ -1372,6 +1372,24 @@ public class UnsolvedSymbolVisitor extends ModifierVisitor<Void> {
   }
 
   /**
+   * Given the qualified name of a class, this method determines if the corresponding class file
+   * exists in the original input codebase.
+   *
+   * @param qualifiedName the qualified name of a class.
+   * @return true if the corresponding class file is origi nally in the input codebase.
+   */
+  public boolean classfileIsInOriginalCodebase(String qualifiedName) {
+    String relativeClassPath = qualifiedName.replace(".", "/");
+    int indexOfTypeVariables = relativeClassPath.indexOf("<");
+    if (indexOfTypeVariables != -1) {
+      relativeClassPath = relativeClassPath.substring(0, indexOfTypeVariables);
+    }
+    relativeClassPath = relativeClassPath + ".java";
+    return this.setOfExistingFiles.contains(
+        Paths.get(this.rootDirectory + "/" + relativeClassPath).toAbsolutePath());
+  }
+
+  /**
    * This method takes a MethodCallExpr as an instance, and check if the method involved is called
    * by an incomplete synthetic class. It should be noted that an incomplete synthetic class is
    * different from a non-existing synthetic class. In this context, an incomplete synthetic class
@@ -1466,6 +1484,10 @@ public class UnsolvedSymbolVisitor extends ModifierVisitor<Void> {
    * @param missedClass the class to be updated
    */
   public void updateMissingClass(UnsolvedClass missedClass) {
+    if (classfileIsInOriginalCodebase(
+        missedClass.getPackageName() + "." + missedClass.getClassName())) {
+      return;
+    }
     Iterator<UnsolvedClass> iterator = missingClass.iterator();
     while (iterator.hasNext()) {
       UnsolvedClass e = iterator.next();
