@@ -184,9 +184,9 @@ public class UnsolvedSymbolVisitor extends ModifierVisitor<Void> {
   private Set<String> targetMethodNames;
 
   /**
-   * Declaration of fields or methods that are used by target methods.
+   * Declaration of fields or methods that are used by target methods. The check is based on the simple name of that member, hence "potential."
    */
-  private Set<String> membersToSolve = new HashSet<>();
+  private Set<String> potentialMembersToSolve = new HashSet<>();
 
   /**
    * Check whether the visitor is inside a target method.
@@ -594,8 +594,12 @@ public class UnsolvedSymbolVisitor extends ModifierVisitor<Void> {
 
   @Override
   public Visitable visit(FieldDeclaration node, Void arg) {
+    boolean isUsedMember = false;
     for (VariableDeclarator var : node.getVariables()) {
       String variableName = var.getNameAsString();
+      if (potentialMembersToSolve.contains(variableName)) {
+        isUsedMember = true;
+      }
       String variableType = node.getElementType().asString();
       Optional<Expression> potentialValue = var.getInitializer();
       String variableDeclaration = variableType + " " + variableName;
@@ -607,6 +611,12 @@ public class UnsolvedSymbolVisitor extends ModifierVisitor<Void> {
             this.setInitialValueForVariableDeclaration(variableType, variableDeclaration);
       }
       variablesAndDeclaration.put(variableName, variableDeclaration);
+    }
+    if (isUsedMember) {
+      insideMemberToSolve = true;
+      Visitable result = this.visit(node, arg);
+      insideMemberToSolve = false;
+      return result;
     }
     return super.visit(node, arg);
   }
@@ -623,52 +633,22 @@ public class UnsolvedSymbolVisitor extends ModifierVisitor<Void> {
 
   @Override
   public Visitable visit(MethodDeclaration node, Void arg) {
-    String methodName = this.currentPackage + "." + this.className + "#" + TargetMethodFinderVisitor.removeMethodReturnType(node.getDeclarationAsString(false, false, false));
-    // a MethodDeclaration instance will have parent node
-    Node parentNode = node.getParentNode().get();
-    Type nodeType = node.getType();
-
-    // This scope logic must happen here, because later in this method there is a check for
-    // whether the return type is a type variable, which must succeed if the type variable
-    // was declared for this scope.
-    addTypeVariableScope(node.getTypeParameters());
-
-    // since this is a return type of a method, it is a dot-separated identifier
-    @SuppressWarnings("signature")
-    @DotSeparatedIdentifiers String nodeTypeAsString = nodeType.asString();
-    @ClassGetSimpleName String nodeTypeSimpleForm = toSimpleName(nodeTypeAsString);
-    if (!this.isTypeVar(nodeTypeSimpleForm)) {
-      // Don't attempt to resolve a type variable, since we will inevitably fail.
-      try {
-        nodeType.resolve();
-      } catch (UnsolvedSymbolException | UnsupportedOperationException e) {
-        updateUnsolvedClassWithClassName(nodeTypeSimpleForm, false);
-      }
+    String methodQualifiedName = this.currentPackage + "." + this.className + "#" + TargetMethodFinderVisitor.removeMethodReturnType(node.getDeclarationAsString(false, false, false));
+    if (targetMethodNames.contains(methodQualifiedName)) {
+      insideTargetMethod = true;
+      Visitable result = processMethod(node);
+      insideTargetMethod = false;
+      return result;
     }
-
-    if (!insideAnObjectCreation(node)) {
-      SimpleName classNodeSimpleName = getSimpleNameOfClass(node);
-      className = classNodeSimpleName.asString();
-      methodAndReturnType.put(node.getNameAsString(), nodeTypeSimpleForm);
+    else if (potentialMembersToSolve.contains(node.getName().asString())) {
+      insideMemberToSolve = true;
+      Visitable result = processMethod(node);
+      insideMemberToSolve = false;
+      return result;
     }
-    // node is a method declaration inside an anonymous class
     else {
-      try {
-        // since this method declaration is inside an anonymous class, its parent will be an
-        // ObjectCreationExpr
-        ((ObjectCreationExpr) parentNode).resolve();
-      } catch (UnsolvedSymbolException | UnsupportedOperationException e) {
-        SimpleName classNodeSimpleName = ((ObjectCreationExpr) parentNode).getType().getName();
-        String nameOfClass = classNodeSimpleName.asString();
-        updateUnsolvedClassWithMethod(node, nameOfClass, toSimpleName(nodeTypeAsString));
-      }
+      return super.visit(node, arg);
     }
-    Set<String> currentLocalVariables = getParameterFromAMethodDeclaration(node);
-    localVariables.addFirst(currentLocalVariables);
-    Visitable result = super.visit(node, arg);
-    localVariables.removeFirst();
-    typeVariables.removeFirst();
-    return result;
   }
 
   @Override
@@ -1385,6 +1365,70 @@ public class UnsolvedSymbolVisitor extends ModifierVisitor<Void> {
     }
     return true;
   }
+
+  /**
+   * Given a MethodDeclaration instance, this method updates the synthetic classes if this instance is unsolved.
+   * @param node an instance of MethodDeclaration
+   */
+  public void updateSyntheticClassesBasedOnAMethodDeclaration (MethodDeclaration node) {
+    // a MethodDeclaration instance will have parent node
+    Node parentNode = node.getParentNode().get();
+    Type nodeType = node.getType();
+
+    // This scope logic must happen here, because later in this method there is a check for
+    // whether the return type is a type variable, which must succeed if the type variable
+    // was declared for this scope.
+    addTypeVariableScope(node.getTypeParameters());
+
+    // since this is a return type of a method, it is a dot-separated identifier
+    @SuppressWarnings("signature")
+    @DotSeparatedIdentifiers String nodeTypeAsString = nodeType.asString();
+    @ClassGetSimpleName String nodeTypeSimpleForm = toSimpleName(nodeTypeAsString);
+    if (!this.isTypeVar(nodeTypeSimpleForm)) {
+      // Don't attempt to resolve a type variable, since we will inevitably fail.
+      try {
+        nodeType.resolve();
+      } catch (UnsolvedSymbolException | UnsupportedOperationException e) {
+        updateUnsolvedClassWithClassName(nodeTypeSimpleForm, false);
+      }
+    }
+
+    if (!insideAnObjectCreation(node)) {
+      SimpleName classNodeSimpleName = getSimpleNameOfClass(node);
+      className = classNodeSimpleName.asString();
+      methodAndReturnType.put(node.getNameAsString(), nodeTypeSimpleForm);
+    }
+    // node is a method declaration inside an anonymous class
+    else {
+      try {
+        // since this method declaration is inside an anonymous class, its parent will be an
+        // ObjectCreationExpr
+        ((ObjectCreationExpr) parentNode).resolve();
+      } catch (UnsolvedSymbolException | UnsupportedOperationException e) {
+        SimpleName classNodeSimpleName = ((ObjectCreationExpr) parentNode).getType().getName();
+        String nameOfClass = classNodeSimpleName.asString();
+        updateUnsolvedClassWithMethod(node, nameOfClass, toSimpleName(nodeTypeAsString));
+      }
+    }
+  }
+
+  /**
+   * Processes a MethodDeclaration by updating the list of synthetic classes, current local variables,
+   * and visiting the given MethodDeclaration.
+   *
+   * @param node The MethodDeclaration node to process.
+   * @return The result of visiting the MethodDeclaration.
+   */
+  private Visitable processMethod(MethodDeclaration node) {
+    updateSyntheticClassesBasedOnAMethodDeclaration(node);
+    Set<String> currentLocalVariables = getParameterFromAMethodDeclaration(node);
+    localVariables.addFirst(currentLocalVariables);
+    Visitable result = super.visit(node, null);
+    localVariables.removeFirst();
+    typeVariables.removeFirst();
+    return result;
+  }
+
 
   /**
    * Given a method call, this method returns the list of types of the parameters of that method
