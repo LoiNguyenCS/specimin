@@ -1,5 +1,6 @@
 package org.checkerframework.specimin;
 
+import com.github.javaparser.ast.CompilationUnit;
 import com.github.javaparser.ast.ImportDeclaration;
 import com.github.javaparser.ast.Node;
 import com.github.javaparser.ast.NodeList;
@@ -177,15 +178,38 @@ public class UnsolvedSymbolVisitor extends ModifierVisitor<Void> {
   private final Set<String> addedTargetFiles = new HashSet<>();
 
   /**
+   * The names of the target methods. The format is
+   * class.fully.qualified.Name#methodName(Param1Type, Param2Type, ...)
+   */
+  private Set<String> targetMethodNames;
+
+  /**
+   * Declaration of fields or methods that are used by target methods.
+   */
+  private Set<String> membersToSolve = new HashSet<>();
+
+  /**
+   * Check whether the visitor is inside a target method.
+   */
+  private boolean insideTargetMethod = false;
+
+  /**
+   * Check whether the visitor is inside a member to solve.
+   */
+  private boolean insideMemberToSolve = false;
+
+  /**
    * Create a new UnsolvedSymbolVisitor instance
    *
    * @param rootDirectory the root directory of the input files
    * @param setOfExistingFiles the set of existing files in the input codebase
    */
-  public UnsolvedSymbolVisitor(String rootDirectory, Set<Path> setOfExistingFiles) {
+  public UnsolvedSymbolVisitor(String rootDirectory, Set<Path> setOfExistingFiles, List<String> targetMethodNames) {
     this.rootDirectory = rootDirectory;
     this.gotException = true;
     this.setOfExistingFiles = setOfExistingFiles;
+    this.targetMethodNames = new HashSet<>();
+    this.targetMethodNames.addAll(targetMethodNames);
   }
 
   /**
@@ -599,6 +623,7 @@ public class UnsolvedSymbolVisitor extends ModifierVisitor<Void> {
 
   @Override
   public Visitable visit(MethodDeclaration node, Void arg) {
+    String methodName = this.currentPackage + "." + this.className + "#" + TargetMethodFinderVisitor.removeMethodReturnType(node.getDeclarationAsString(false, false, false));
     // a MethodDeclaration instance will have parent node
     Node parentNode = node.getParentNode().get();
     Type nodeType = node.getType();
