@@ -4,7 +4,6 @@ import com.github.javaparser.ast.body.ClassOrInterfaceDeclaration;
 import com.github.javaparser.ast.type.ClassOrInterfaceType;
 import com.github.javaparser.ast.visitor.ModifierVisitor;
 import com.github.javaparser.ast.visitor.Visitable;
-import java.util.HashSet;
 import java.util.Set;
 
 /**
@@ -16,8 +15,6 @@ public class InheritancePreserveVisitor extends ModifierVisitor<Void> {
   /** List of classes used by the target methods. */
   public Set<String> usedClass;
 
-  /** List of fully-qualified classnames to be added to the list of used classes. */
-  public Set<String> addedClasses = new HashSet<>();
   /**
    * Constructs an InheritancePreserveVisitor with the specified set of used classes.
    *
@@ -28,12 +25,12 @@ public class InheritancePreserveVisitor extends ModifierVisitor<Void> {
   }
 
   /**
-   * Return the set of classes to be added to the list of used classes.
+   * Return the current set of used classes.
    *
-   * @return The value of addedClasses.
+   * @return The set of used classes.
    */
-  public Set<String> getAddedClasses() {
-    return addedClasses;
+  public Set<String> getUsedClass() {
+    return usedClass;
   }
 
   @Override
@@ -41,7 +38,7 @@ public class InheritancePreserveVisitor extends ModifierVisitor<Void> {
     if (usedClass.contains(decl.resolve().getQualifiedName())) {
       for (ClassOrInterfaceType extendedType : decl.getExtendedTypes()) {
         String qualifiedName = extendedType.resolve().getQualifiedName();
-        addedClasses.add(qualifiedName);
+        usedClass.add(qualifiedName);
       }
     }
     return super.visit(decl, p);
