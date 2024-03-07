@@ -90,6 +90,9 @@ public class TargetMethodFinderVisitor extends ModifierVisitor<Void> {
    */
   private final List<String> unfoundMethods;
 
+  /** The name of the primary class corresponding to the name of the currently visiting Java file */
+  private String primaryClass = "";
+
   /**
    * This map has the name of an imported class as key and the package of that class as the value.
    */
@@ -157,6 +160,15 @@ public class TargetMethodFinderVisitor extends ModifierVisitor<Void> {
   }
 
   /**
+   * Set the value of primaryClass
+   *
+   * @param primaryClass name of the primary class of the currently visiting Java file.
+   */
+  public void setPrimaryClass(String primaryClass) {
+    this.primaryClass = primaryClass;
+  }
+
+  /**
    * Updates the mapping of method declarations to their corresponding interface type based on a
    * list of methods and the interface type that contains those methods.
    *
@@ -193,8 +205,12 @@ public class TargetMethodFinderVisitor extends ModifierVisitor<Void> {
       }
     }
 
+    boolean thisClassIsLocal = !decl.getFullyQualifiedName().get().equals(this.primaryClass);
+
     if (decl.isNestedType()) {
       this.classFQName += "." + decl.getName().toString();
+    } else if (thisClassIsLocal) {
+      this.classFQName = this.primaryClass + "$" + decl.getName().asString();
     } else {
       if (!this.classFQName.equals("")) {
         throw new UnsupportedOperationException(
@@ -257,8 +273,13 @@ public class TargetMethodFinderVisitor extends ModifierVisitor<Void> {
     if (this.targetMethodNames.contains(methodName)) {
       ResolvedMethodDeclaration resolvedMethod = method.resolve();
       updateUsedClassesForInterface(resolvedMethod);
+      //  JavaParser treats a local class as having a qualified name, contrary to their
+      // documentation.
+      // Consequently, we need to perform two updates here: one for the local class and one for the
+      // primary class.
       updateUsedClassWithQualifiedClassName(
           resolvedMethod.getPackageName() + "." + resolvedMethod.getClassName());
+      updateUsedClassWithQualifiedClassName(this.classFQName);
       insideTargetMethod = true;
       targetMethods.add(resolvedMethod.getQualifiedSignature());
       unfoundMethods.remove(methodName);
@@ -363,8 +384,7 @@ public class TargetMethodFinderVisitor extends ModifierVisitor<Void> {
     if (insideTargetMethod) {
       ResolvedMethodDeclaration decl = call.resolve();
       usedMembers.add(decl.getQualifiedSignature());
-      updateUsedClassWithQualifiedClassName(
-          decl.getPackageName() + "." + decl.getClassName());
+      updateUsedClassWithQualifiedClassName(decl.getPackageName() + "." + decl.getClassName());
       ResolvedType methodReturnType = decl.getReturnType();
       if (methodReturnType instanceof ResolvedReferenceType) {
         updateUsedClassBasedOnType(methodReturnType);
@@ -552,8 +572,12 @@ public class TargetMethodFinderVisitor extends ModifierVisitor<Void> {
       return;
     }
     usedClass.add(qualifiedClassName);
-    String potentialOuterClass =
-        qualifiedClassName.substring(0, qualifiedClassName.lastIndexOf("."));
+    String potentialOuterClass;
+    if (qualifiedClassName.contains("$")) {
+      potentialOuterClass = qualifiedClassName.substring(0, qualifiedClassName.lastIndexOf("$"));
+    } else {
+      potentialOuterClass = qualifiedClassName.substring(0, qualifiedClassName.lastIndexOf("."));
+    }
     if (UnsolvedSymbolVisitor.isAClassPath(potentialOuterClass)) {
       updateUsedClassWithQualifiedClassName(potentialOuterClass);
     }

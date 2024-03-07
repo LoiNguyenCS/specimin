@@ -181,7 +181,8 @@ public class UnsolvedSymbolVisitor extends ModifierVisitor<Void> {
   private Map<String, @ClassGetSimpleName String> fieldNameToClassNameMap = new HashMap<>();
 
   /**
-   * The fully-qualified name of each Java class in the original codebase mapped to the corresponding Java file.
+   * The fully-qualified name of each Java class in the original codebase mapped to the
+   * corresponding Java file.
    */
   private Map<String, Path> existingClassesToFilePath;
 
@@ -228,11 +229,14 @@ public class UnsolvedSymbolVisitor extends ModifierVisitor<Void> {
   /** The qualified name of the current class. */
   private String currentClassQualifiedName = "";
 
+  /** The name of the primary class corresponding to the name of the currently visiting Java file */
+  private String primaryClass = "";
+
   /**
    * Create a new UnsolvedSymbolVisitor instance
    *
    * @param rootDirectory the root directory of the input files
-   * @param existingClassesToFilePath The fully-qualified name of each Java class in the original 
+   * @param existingClassesToFilePath The fully-qualified name of each Java class in the original
    *     codebase mapped to the corresponding Java file.
    * @param targetMethodsSignatures the list of signatures of target methods as specified by the
    *     user.
@@ -277,6 +281,15 @@ public class UnsolvedSymbolVisitor extends ModifierVisitor<Void> {
         throw new RuntimeException(e);
       }
     }
+  }
+
+  /**
+   * Set the value of primaryClass
+   *
+   * @param primaryClass name of the primary class of the currently visiting Java file.
+   */
+  public void setPrimaryClass(String primaryClass) {
+    this.primaryClass = primaryClass;
   }
 
   /**
@@ -409,8 +422,11 @@ public class UnsolvedSymbolVisitor extends ModifierVisitor<Void> {
     SimpleName nodeName = node.getName();
     className = nodeName.asString();
 
+    boolean thisClassIsLocal = !node.getFullyQualifiedName().get().equals(this.primaryClass);
     if (node.isNestedType()) {
       this.currentClassQualifiedName += "." + node.getName().asString();
+    } else if (thisClassIsLocal) {
+      this.currentClassQualifiedName = this.primaryClass + "$" + node.getName().asString();
     } else {
       this.currentClassQualifiedName = node.getFullyQualifiedName().orElseThrow();
     }
@@ -772,6 +788,7 @@ public class UnsolvedSymbolVisitor extends ModifierVisitor<Void> {
             + TargetMethodFinderVisitor.removeMethodReturnType(
                 node.getDeclarationAsString(false, false, false));
     String methodSimpleName = node.getName().asString();
+    System.out.println(methodQualifiedSignature);
     if (targetMethodsSignatures.contains(methodQualifiedSignature)) {
       insideTargetMethod = true;
       Visitable result = processMethodDeclaration(node);

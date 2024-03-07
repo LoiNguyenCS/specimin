@@ -142,6 +142,10 @@ public class SpeciminRunner {
               addMissingClass.getSyntheticClassesAsAStringSet());
       for (CompilationUnit cu : parsedTargetFiles.values()) {
         addMissingClass.setImportStatement(cu.getImports());
+        // the first get() is safe because cu is not from a jar file.
+        // the second get() is safe because primary type here is definitely not a local declaration,
+        // which does not have a fully-qualified name.
+        addMissingClass.setPrimaryClass(cu.getPrimaryType().get().getFullyQualifiedName().get());
         // it's important to make sure that getDeclarations and addMissingClass will visit the same
         // file for each execution of the loop
         FieldDeclarationsVisitor getDeclarations = new FieldDeclarationsVisitor();
@@ -218,6 +222,7 @@ public class SpeciminRunner {
     TargetMethodFinderVisitor finder = new TargetMethodFinderVisitor(targetMethodNames);
 
     for (CompilationUnit cu : parsedTargetFiles.values()) {
+      finder.setPrimaryClass(cu.getPrimaryType().get().getFullyQualifiedName().get());
       cu.accept(finder, null);
     }
 
