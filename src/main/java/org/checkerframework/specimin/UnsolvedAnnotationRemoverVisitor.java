@@ -77,14 +77,20 @@ public class UnsolvedAnnotationRemoverVisitor extends ModifierVisitor<Void> {
   }
 
   /**
-   * This method removes all unsolved annotations.
+   * Processes annotations by removing annotations that do not satisfy at least one of the following
+   * two requirements:
    *
-   * @param annotation a compilation unit to be processed.
+   * <ol>
+   *   <li>The class file exists in the same package as the input class.
+   *   <li>The annotation is solvable by JAR files.
+   * </ol>
+   *
+   * @param annotation the annotation to be processed
    */
   public void processAnnotations(AnnotationExpr annotation) {
     String annotationName = annotation.getNameAsString();
     if (!UnsolvedSymbolVisitor.isAClassPath(annotationName)) {
-      // an annotation not imported is from the java.lang package or the same package as the input
+      // An annotation not imported is from the java.lang package or the same package as the input
       // file, which is not our concern.
       if (!classToFullClassName.containsKey(annotationName)) {
         return;
