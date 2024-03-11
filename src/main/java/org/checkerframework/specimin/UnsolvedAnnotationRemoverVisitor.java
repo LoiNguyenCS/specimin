@@ -1,19 +1,20 @@
 package org.checkerframework.specimin;
 
-import com.github.javaparser.ast.CompilationUnit;
 import com.github.javaparser.ast.ImportDeclaration;
 import com.github.javaparser.ast.Node;
 import com.github.javaparser.ast.expr.AnnotationExpr;
+import com.github.javaparser.ast.expr.MarkerAnnotationExpr;
+import com.github.javaparser.ast.expr.NormalAnnotationExpr;
+import com.github.javaparser.ast.expr.SingleMemberAnnotationExpr;
 import com.github.javaparser.ast.visitor.ModifierVisitor;
+import com.github.javaparser.ast.visitor.Visitable;
 import com.github.javaparser.symbolsolver.resolution.typesolvers.JarTypeSolver;
 import java.io.IOException;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-/**
- * A visitor that removes unsolved annotation expressions.
- */
+/** A visitor that removes unsolved annotation expressions. */
 public class UnsolvedAnnotationRemoverVisitor extends ModifierVisitor<Void> {
   /**
    * List of paths of jar files to be used as input. Note: this is the set of every jar path, not
@@ -57,26 +58,41 @@ public class UnsolvedAnnotationRemoverVisitor extends ModifierVisitor<Void> {
     return decl;
   }
 
+  @Override
+  public Visitable visit(MarkerAnnotationExpr expr, Void p) {
+    processAnnotations(expr);
+    return super.visit(expr, p);
+  }
+
+  @Override
+  public Visitable visit(NormalAnnotationExpr expr, Void p) {
+    processAnnotations(expr);
+    return super.visit(expr, p);
+  }
+
+  @Override
+  public Visitable visit(SingleMemberAnnotationExpr expr, Void p) {
+    processAnnotations(expr);
+    return super.visit(expr, p);
+  }
+
   /**
-   * Given a compilation unit, this method removes all unsolved annotations and record the related
-   * jar paths of solved annotations.
+   * This method removes all unsolved annotations.
    *
-   * @param compilationUnit a compilation unit to be processed.
+   * @param annotation a compilation unit to be processed.
    */
-  public void processAnnotations(CompilationUnit compilationUnit) {
-    List<AnnotationExpr> annotationExprList = compilationUnit.findAll(AnnotationExpr.class);
-    for (AnnotationExpr annotation : annotationExprList) {
-      String annotationName = annotation.getNameAsString();
-      if (!UnsolvedSymbolVisitor.isAClassPath(annotationName)) {
-        // an annotation not imported is from the java.lang package, which is not our concern.
-        if (!classToFullClassName.containsKey(annotationName)) {
-          return;
-        }
-        annotationName = classToFullClassName.get(annotationName);
+  public void processAnnotations(AnnotationExpr annotation) {
+    String annotationName = annotation.getNameAsString();
+    if (!UnsolvedSymbolVisitor.isAClassPath(annotationName)) {
+      // an annotation not imported is from the java.lang package or the same package as the input
+      // file, which is not our concern.
+      if (!classToFullClassName.containsKey(annotationName)) {
+        return;
       }
-      if (!classToJarPath.containsKey(annotationName)) {
-        annotation.remove();
-      }
+      annotationName = classToFullClassName.get(annotationName);
+    }
+    if (!classToJarPath.containsKey(annotationName)) {
+      annotation.remove();
     }
   }
 }

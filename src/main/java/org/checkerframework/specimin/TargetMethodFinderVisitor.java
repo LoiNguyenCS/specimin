@@ -25,6 +25,7 @@ import com.github.javaparser.ast.type.UnionType;
 import com.github.javaparser.ast.visitor.ModifierVisitor;
 import com.github.javaparser.ast.visitor.Visitable;
 import com.github.javaparser.resolution.UnsolvedSymbolException;
+import com.github.javaparser.resolution.declarations.ResolvedAnnotationDeclaration;
 import com.github.javaparser.resolution.declarations.ResolvedConstructorDeclaration;
 import com.github.javaparser.resolution.declarations.ResolvedFieldDeclaration;
 import com.github.javaparser.resolution.declarations.ResolvedMethodDeclaration;
@@ -306,36 +307,30 @@ public class TargetMethodFinderVisitor extends ModifierVisitor<Void> {
 
   @Override
   public Visitable visit(MarkerAnnotationExpr expr, Void p) {
-    if (insideTargetMethod) {
-      String annotationName = expr.getNameAsString();
-      if (importedClassToPackage.containsKey(annotationName)) {
-        updateUsedClassWithQualifiedClassName(
-            importedClassToPackage.get(annotationName) + "." + annotationName);
-      }
+    ResolvedAnnotationDeclaration resolvedAnnotation = expr.resolve();
+    if (!resolvedAnnotation.getPackageName().contains("java.lang")) {
+      updateUsedClassWithQualifiedClassName(
+          resolvedAnnotation.getPackageName() + "." + resolvedAnnotation.getClassName());
     }
     return super.visit(expr, p);
   }
 
   @Override
   public Visitable visit(NormalAnnotationExpr expr, Void p) {
-    if (insideTargetMethod) {
-      String annotationName = expr.getNameAsString();
-      if (importedClassToPackage.containsKey(annotationName)) {
-        updateUsedClassWithQualifiedClassName(
-            importedClassToPackage.get(annotationName) + "." + annotationName);
-      }
+    ResolvedAnnotationDeclaration resolvedAnnotation = expr.resolve();
+    if (!resolvedAnnotation.getPackageName().contains("java.lang")) {
+      updateUsedClassWithQualifiedClassName(
+          resolvedAnnotation.getPackageName() + "." + resolvedAnnotation.getClassName());
     }
     return super.visit(expr, p);
   }
 
   @Override
   public Visitable visit(SingleMemberAnnotationExpr expr, Void p) {
-    if (insideTargetMethod) {
-      String annotationName = expr.getNameAsString();
-      if (importedClassToPackage.containsKey(annotationName)) {
-        updateUsedClassWithQualifiedClassName(
-            importedClassToPackage.get(annotationName) + "." + annotationName);
-      }
+    ResolvedAnnotationDeclaration resolvedAnnotation = expr.resolve();
+    if (!resolvedAnnotation.getPackageName().contains("java.lang")) {
+      updateUsedClassWithQualifiedClassName(
+          resolvedAnnotation.getPackageName() + "." + resolvedAnnotation.getClassName());
     }
     return super.visit(expr, p);
   }
