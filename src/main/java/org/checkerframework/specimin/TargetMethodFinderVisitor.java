@@ -306,36 +306,6 @@ public class TargetMethodFinderVisitor extends ModifierVisitor<Void> {
   }
 
   @Override
-  public Visitable visit(MarkerAnnotationExpr expr, Void p) {
-    ResolvedAnnotationDeclaration resolvedAnnotation = expr.resolve();
-    if (!resolvedAnnotation.getPackageName().contains("java.lang")) {
-      updateUsedClassWithQualifiedClassName(
-          resolvedAnnotation.getPackageName() + "." + resolvedAnnotation.getClassName());
-    }
-    return super.visit(expr, p);
-  }
-
-  @Override
-  public Visitable visit(NormalAnnotationExpr expr, Void p) {
-    ResolvedAnnotationDeclaration resolvedAnnotation = expr.resolve();
-    if (!resolvedAnnotation.getPackageName().contains("java.lang")) {
-      updateUsedClassWithQualifiedClassName(
-          resolvedAnnotation.getPackageName() + "." + resolvedAnnotation.getClassName());
-    }
-    return super.visit(expr, p);
-  }
-
-  @Override
-  public Visitable visit(SingleMemberAnnotationExpr expr, Void p) {
-    ResolvedAnnotationDeclaration resolvedAnnotation = expr.resolve();
-    if (!resolvedAnnotation.getPackageName().contains("java.lang")) {
-      updateUsedClassWithQualifiedClassName(
-          resolvedAnnotation.getPackageName() + "." + resolvedAnnotation.getClassName());
-    }
-    return super.visit(expr, p);
-  }
-
-  @Override
   public Visitable visit(Parameter para, Void p) {
     if (insideTargetMethod) {
       Type type = para.getType();
