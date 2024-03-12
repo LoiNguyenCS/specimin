@@ -10,9 +10,12 @@ import com.github.javaparser.ast.visitor.ModifierVisitor;
 import com.github.javaparser.ast.visitor.Visitable;
 import com.github.javaparser.symbolsolver.resolution.typesolvers.JarTypeSolver;
 import java.io.IOException;
+import java.util.Arrays;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /** A visitor that removes unsolved annotation expressions. */
 public class UnsolvedAnnotationRemoverVisitor extends ModifierVisitor<Void> {
@@ -30,6 +33,10 @@ public class UnsolvedAnnotationRemoverVisitor extends ModifierVisitor<Void> {
    * compilation unit.
    */
   Map<String, String> classToFullClassName = new HashMap<>();
+
+  /** The set of annotations predefined by java.lang. */
+  static final Set<String> javaLangPredefinedAnnotations =
+      new HashSet<>(Arrays.asList("Override", "Deprecated", "SuppressWarnings"));
 
   /**
    * Create a new instance of UnsolvedAnnotationRemoverVisitor
@@ -77,13 +84,8 @@ public class UnsolvedAnnotationRemoverVisitor extends ModifierVisitor<Void> {
   }
 
   /**
-   * Processes annotations by removing annotations that do not satisfy at least one of the following
-   * two requirements:
-   *
-   * <ol>
-   *   <li>The class file exists in the same package as the input class.
-   *   <li>The annotation is solvable by JAR files.
-   * </ol>
+   * Processes annotations by removing annotations that are not solvable by the input list of jar
+   * files.
    *
    * @param annotation the annotation to be processed
    */
@@ -93,6 +95,9 @@ public class UnsolvedAnnotationRemoverVisitor extends ModifierVisitor<Void> {
       // An annotation not imported is from the java.lang package or the same package as the input
       // file, which is not our concern.
       if (!classToFullClassName.containsKey(annotationName)) {
+        if (!javaLangPredefinedAnnotations.contains(annotationName)) {
+          annotation.remove();
+        }
         return;
       }
       annotationName = classToFullClassName.get(annotationName);
