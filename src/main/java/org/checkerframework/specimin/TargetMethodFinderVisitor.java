@@ -25,7 +25,6 @@ import com.github.javaparser.ast.type.UnionType;
 import com.github.javaparser.ast.visitor.ModifierVisitor;
 import com.github.javaparser.ast.visitor.Visitable;
 import com.github.javaparser.resolution.UnsolvedSymbolException;
-import com.github.javaparser.resolution.declarations.ResolvedAnnotationDeclaration;
 import com.github.javaparser.resolution.declarations.ResolvedConstructorDeclaration;
 import com.github.javaparser.resolution.declarations.ResolvedFieldDeclaration;
 import com.github.javaparser.resolution.declarations.ResolvedMethodDeclaration;
@@ -40,7 +39,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
-import java.util.stream.Collectors;
 
 /**
  * The main visitor for Specimin's first phase, which locates the target method(s) and compiles
@@ -49,8 +47,7 @@ import java.util.stream.Collectors;
 public class TargetMethodFinderVisitor extends ModifierVisitor<Void> {
   /**
    * The names of the target methods. The format is
-   * class.fully.qualified.Name#methodName(Param1Type, Param2Type, ...). All the names will have
-   * spaces remove for ease of comparison.
+   * class.fully.qualified.Name#methodName(Param1Type, Param2Type, ...)
    */
   private Set<String> targetMethodNames;
 
@@ -103,32 +100,19 @@ public class TargetMethodFinderVisitor extends ModifierVisitor<Void> {
    * any.
    */
   private final Map<ResolvedMethodDeclaration, ClassOrInterfaceType>
-      methodDeclarationToInterfaceType = new HashMap<>();
-
-  /**
-   * This map connects the fully-qualified names of non-primary classes with the fully-qualified
-   * names of their corresponding primary classes. A primary class is a class that has the same name
-   * as the Java file where the class is declared.
-   */
-  Map<String, String> nonPrimaryClassesToPrimaryClass;
+          methodDeclarationToInterfaceType = new HashMap<>();
 
   /**
    * Create a new target method finding visitor.
    *
    * @param methodNames the names of the target methods, the format
    *     class.fully.qualified.Name#methodName(Param1Type, Param2Type, ...)
-   * @param nonPrimaryClassesToPrimaryClass map connecting non-primary classes with their
-   *     corresponding primary classes
    */
-  public TargetMethodFinderVisitor(
-      List<String> methodNames, Map<String, String> nonPrimaryClassesToPrimaryClass) {
+  public TargetMethodFinderVisitor(List<String> methodNames) {
     targetMethodNames = new HashSet<>();
-    for (String methodSignature : methodNames) {
-      this.targetMethodNames.add(methodSignature.replaceAll("\\s", ""));
-    }
+    targetMethodNames.addAll(methodNames);
     unfoundMethods = new ArrayList<>(methodNames);
     importedClassToPackage = new HashMap<>();
-    this.nonPrimaryClassesToPrimaryClass = nonPrimaryClassesToPrimaryClass;
   }
 
   /**
@@ -180,7 +164,7 @@ public class TargetMethodFinderVisitor extends ModifierVisitor<Void> {
    * @param interfaceType the interface containing the specified methods.
    */
   private void updateMethodDeclarationToInterfaceType(
-      List<ResolvedMethodDeclaration> methodList, ClassOrInterfaceType interfaceType) {
+          List<ResolvedMethodDeclaration> methodList, ClassOrInterfaceType interfaceType) {
     for (ResolvedMethodDeclaration method : methodList) {
       this.methodDeclarationToInterfaceType.put(method, interfaceType);
     }
@@ -203,7 +187,7 @@ public class TargetMethodFinderVisitor extends ModifierVisitor<Void> {
     for (ClassOrInterfaceType interfaceType : decl.getImplementedTypes()) {
       try {
         updateMethodDeclarationToInterfaceType(
-            interfaceType.resolve().getAllMethods(), interfaceType);
+                interfaceType.resolve().getAllMethods(), interfaceType);
       } catch (UnsolvedSymbolException e) {
         continue;
       }
@@ -214,10 +198,10 @@ public class TargetMethodFinderVisitor extends ModifierVisitor<Void> {
     } else {
       if (!this.classFQName.equals("")) {
         throw new UnsupportedOperationException(
-            "Attempted to enter an unexpected kind of class: "
-                + decl.getFullyQualifiedName()
-                + " but already had a set classFQName: "
-                + classFQName);
+                "Attempted to enter an unexpected kind of class: "
+                        + decl.getFullyQualifiedName()
+                        + " but already had a set classFQName: "
+                        + classFQName);
       }
       // Should always be present.
       this.classFQName = decl.getFullyQualifiedName().orElseThrow();
@@ -242,7 +226,7 @@ public class TargetMethodFinderVisitor extends ModifierVisitor<Void> {
       targetMethods.add(resolvedMethod.getQualifiedSignature());
       unfoundMethods.remove(methodName);
       updateUsedClassWithQualifiedClassName(
-          resolvedMethod.getPackageName() + "." + resolvedMethod.getClassName());
+              resolvedMethod.getPackageName() + "." + resolvedMethod.getClassName());
     }
     Visitable result = super.visit(method, p);
     insideTargetMethod = false;
@@ -259,8 +243,7 @@ public class TargetMethodFinderVisitor extends ModifierVisitor<Void> {
   public Visitable visit(MethodDeclaration method, Void p) {
     String methodDeclAsString = method.getDeclarationAsString(false, false, false);
     // TODO: test this with annotations
-    String methodName =
-        this.classFQName + "#" + removeMethodReturnTypeAndAnnotations(methodDeclAsString);
+    String methodName = this.classFQName + "#" + removeMethodReturnType(methodDeclAsString);
     // this method belongs to an anonymous class inside the target method
     if (insideTargetMethod) {
       ObjectCreationExpr parentExpression = (ObjectCreationExpr) method.getParentNode().get();
@@ -270,21 +253,15 @@ public class TargetMethodFinderVisitor extends ModifierVisitor<Void> {
       usedMembers.add(methodPackage + "." + methodClass + "." + method.getNameAsString() + "()");
       updateUsedClassWithQualifiedClassName(methodPackage + "." + methodClass);
     }
-    String methodWithoutAnySpace = methodName.replaceAll("\\s", "");
-    if (this.targetMethodNames.contains(methodWithoutAnySpace)) {
+
+    if (this.targetMethodNames.contains(methodName)) {
       ResolvedMethodDeclaration resolvedMethod = method.resolve();
       updateUsedClassesForInterface(resolvedMethod);
       updateUsedClassWithQualifiedClassName(
-          resolvedMethod.getPackageName() + "." + resolvedMethod.getClassName());
+              resolvedMethod.getPackageName() + "." + resolvedMethod.getClassName());
       insideTargetMethod = true;
       targetMethods.add(resolvedMethod.getQualifiedSignature());
-      // make sure that differences in spacing does not interfere with the result
-      for (String unfound : unfoundMethods) {
-        if (unfound.replaceAll("\\s", "").equals(methodWithoutAnySpace)) {
-          unfoundMethods.remove(unfound);
-          break;
-        }
-      }
+      unfoundMethods.remove(methodName);
       Type returnType = method.getType();
       // JavaParser may misinterpret unresolved array types as reference types.
       // To ensure accuracy, we resolve the type before proceeding with the check.
@@ -303,6 +280,42 @@ public class TargetMethodFinderVisitor extends ModifierVisitor<Void> {
     Visitable result = super.visit(method, p);
     insideTargetMethod = false;
     return result;
+  }
+
+  @Override
+  public Visitable visit(MarkerAnnotationExpr expr, Void p) {
+    if (insideTargetMethod) {
+      String annotationName = expr.getNameAsString();
+      if (importedClassToPackage.containsKey(annotationName)) {
+        updateUsedClassWithQualifiedClassName(
+                importedClassToPackage.get(annotationName) + "." + annotationName);
+      }
+    }
+    return super.visit(expr, p);
+  }
+
+  @Override
+  public Visitable visit(NormalAnnotationExpr expr, Void p) {
+    if (insideTargetMethod) {
+      String annotationName = expr.getNameAsString();
+      if (importedClassToPackage.containsKey(annotationName)) {
+        updateUsedClassWithQualifiedClassName(
+                importedClassToPackage.get(annotationName) + "." + annotationName);
+      }
+    }
+    return super.visit(expr, p);
+  }
+
+  @Override
+  public Visitable visit(SingleMemberAnnotationExpr expr, Void p) {
+    if (insideTargetMethod) {
+      String annotationName = expr.getNameAsString();
+      if (importedClassToPackage.containsKey(annotationName)) {
+        updateUsedClassWithQualifiedClassName(
+                importedClassToPackage.get(annotationName) + "." + annotationName);
+      }
+    }
+    return super.visit(expr, p);
   }
 
   @Override
@@ -327,15 +340,15 @@ public class TargetMethodFinderVisitor extends ModifierVisitor<Void> {
 
         if (paramType.isReferenceType()) {
           String paraTypeFullName =
-              paramType.asReferenceType().getTypeDeclaration().get().getQualifiedName();
+                  paramType.asReferenceType().getTypeDeclaration().get().getQualifiedName();
           updateUsedClassWithQualifiedClassName(paraTypeFullName);
           for (ResolvedType typeParameterValue :
-              paramType.asReferenceType().typeParametersValues()) {
+                  paramType.asReferenceType().typeParametersValues()) {
             String typeParameterValueName = typeParameterValue.describe();
             if (typeParameterValueName.contains("<")) {
               // removing the "<...>" part if there is any.
               typeParameterValueName =
-                  typeParameterValueName.substring(0, typeParameterValueName.indexOf("<"));
+                      typeParameterValueName.substring(0, typeParameterValueName.indexOf("<"));
             }
             updateUsedClassWithQualifiedClassName(typeParameterValueName);
           }
@@ -350,18 +363,11 @@ public class TargetMethodFinderVisitor extends ModifierVisitor<Void> {
     if (insideTargetMethod) {
       ResolvedMethodDeclaration decl = call.resolve();
       usedMembers.add(decl.getQualifiedSignature());
-      updateUsedClassWithQualifiedClassName(decl.getPackageName() + "." + decl.getClassName());
+      updateUsedClassWithQualifiedClassName(
+              decl.getPackageName() + "." + decl.getClassName());
       ResolvedType methodReturnType = decl.getReturnType();
       if (methodReturnType instanceof ResolvedReferenceType) {
         updateUsedClassBasedOnType(methodReturnType);
-      }
-      // Special case for lambdas to preserve artificial functional
-      // interfaces.
-      for (int i = 0; i < call.getArguments().size(); ++i) {
-        Expression arg = call.getArgument(i);
-        if (arg.isLambdaExpr()) {
-          updateUsedClassBasedOnType(decl.getParam(i).getType());
-        }
       }
     }
     return super.visit(call, p);
@@ -392,7 +398,7 @@ public class TargetMethodFinderVisitor extends ModifierVisitor<Void> {
       ResolvedConstructorDeclaration resolved = newExpr.resolve();
       usedMembers.add(resolved.getQualifiedSignature());
       updateUsedClassWithQualifiedClassName(
-          resolved.getPackageName() + "." + resolved.getClassName());
+              resolved.getPackageName() + "." + resolved.getClassName());
     }
     return super.visit(newExpr, p);
   }
@@ -403,7 +409,7 @@ public class TargetMethodFinderVisitor extends ModifierVisitor<Void> {
       ResolvedConstructorDeclaration resolved = expr.resolve();
       usedMembers.add(resolved.getQualifiedSignature());
       updateUsedClassWithQualifiedClassName(
-          resolved.getPackageName() + "." + resolved.getClassName());
+              resolved.getPackageName() + "." + resolved.getClassName());
     }
     return super.visit(expr, p);
   }
@@ -462,15 +468,15 @@ public class TargetMethodFinderVisitor extends ModifierVisitor<Void> {
       if (method.getName().equals(interfaceMethod.getName())) {
         try {
           if (method
-              .getReturnType()
-              .describe()
-              .equals(interfaceMethod.getReturnType().describe())) {
+                  .getReturnType()
+                  .describe()
+                  .equals(interfaceMethod.getReturnType().describe())) {
             if (method.getNumberOfParams() == interfaceMethod.getNumberOfParams()) {
               updateUsedClassWithQualifiedClassName(
-                  methodDeclarationToInterfaceType
-                      .get(interfaceMethod)
-                      .resolve()
-                      .getQualifiedName());
+                      methodDeclarationToInterfaceType
+                              .get(interfaceMethod)
+                              .resolve()
+                              .getQualifiedName());
               usedMembers.add(interfaceMethod.getQualifiedSignature());
             }
           }
@@ -484,22 +490,18 @@ public class TargetMethodFinderVisitor extends ModifierVisitor<Void> {
 
   /**
    * Given a method declaration, this method return the declaration of that method without the
-   * return type and any possible annotation.
+   * return type.
    *
    * @param methodDeclaration the method declaration to be used as input
-   * @return methodDeclaration without the return type and any possible annotation.
+   * @return methodDeclaration without the return type
    */
-  public static String removeMethodReturnTypeAndAnnotations(String methodDeclaration) {
+  public static String removeMethodReturnType(String methodDeclaration) {
     String methodDeclarationWithoutParen =
-        methodDeclaration.substring(0, methodDeclaration.indexOf("("));
+            methodDeclaration.substring(0, methodDeclaration.indexOf("("));
     List<String> methodParts = Splitter.onPattern(" ").splitToList(methodDeclarationWithoutParen);
     String methodName = methodParts.get(methodParts.size() - 1);
     String methodReturnType = methodDeclaration.substring(0, methodDeclaration.indexOf(methodName));
-    String methodWithoutReturnType = methodDeclaration.replace(methodReturnType, "");
-    methodParts = Splitter.onPattern(" ").splitToList(methodWithoutReturnType);
-    String filteredMethodDeclaration =
-        methodParts.stream().filter(part -> !part.startsWith("@")).collect(Collectors.joining(" "));
-    return filteredMethodDeclaration;
+    return methodDeclaration.replace(methodReturnType, "");
   }
 
   /**
@@ -540,8 +542,7 @@ public class TargetMethodFinderVisitor extends ModifierVisitor<Void> {
 
   /**
    * Updates the list of used classes with the given qualified class name and its corresponding
-   * primary classes and enclosing classes. This includes cases such as classes not sharing the same
-   * name as their Java files or nested classes.
+   * enclosing classes, if applicable (in the case of nested classes).
    *
    * @param qualifiedClassName The qualified class name to be included in the list of used classes.
    */
@@ -550,20 +551,9 @@ public class TargetMethodFinderVisitor extends ModifierVisitor<Void> {
     if (!qualifiedClassName.contains(".")) {
       return;
     }
-    // strip type variables, if they're present
-    if (qualifiedClassName.contains("<")) {
-      qualifiedClassName = qualifiedClassName.substring(0, qualifiedClassName.indexOf("<"));
-    }
     usedClass.add(qualifiedClassName);
-
-    // in case this class is not a primary class.
-    if (nonPrimaryClassesToPrimaryClass.containsKey(qualifiedClassName)) {
-      updateUsedClassWithQualifiedClassName(
-          nonPrimaryClassesToPrimaryClass.get(qualifiedClassName));
-    }
-
     String potentialOuterClass =
-        qualifiedClassName.substring(0, qualifiedClassName.lastIndexOf("."));
+            qualifiedClassName.substring(0, qualifiedClassName.lastIndexOf("."));
     if (UnsolvedSymbolVisitor.isAClassPath(potentialOuterClass)) {
       updateUsedClassWithQualifiedClassName(potentialOuterClass);
     }
