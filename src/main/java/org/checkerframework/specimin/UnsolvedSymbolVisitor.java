@@ -16,6 +16,7 @@ import com.github.javaparser.ast.expr.Expression;
 import com.github.javaparser.ast.expr.FieldAccessExpr;
 import com.github.javaparser.ast.expr.LambdaExpr;
 import com.github.javaparser.ast.expr.MethodCallExpr;
+import com.github.javaparser.ast.expr.MethodReferenceExpr;
 import com.github.javaparser.ast.expr.NameExpr;
 import com.github.javaparser.ast.expr.ObjectCreationExpr;
 import com.github.javaparser.ast.expr.SimpleName;
@@ -881,6 +882,9 @@ public class UnsolvedSymbolVisitor extends ModifierVisitor<Void> {
       String qualifiedNameOfIncompleteClass = getIncompleteClass(method);
       if (classfileIsInOriginalCodebase(qualifiedNameOfIncompleteClass)) {
         addedTargetFiles.add(qualifiedNameToFilePath(qualifiedNameOfIncompleteClass));
+      } else if (getMethodReferenceInMethodCall(method) != null) {
+        ResolvedMethodDeclaration correspondingMethodReference = getResolvedMethodDeclarationFromeMethodReference(getMethodReferenceInMethodCall(method));
+        System.out.println(correspondingMethodReference);
       } else {
         @ClassGetSimpleName String incompleteClassName = fullyQualifiedToSimple(qualifiedNameOfIncompleteClass);
         updateUnsolvedClassOrInterfaceWithMethod(method, incompleteClassName, "", false);
@@ -1106,6 +1110,29 @@ public class UnsolvedSymbolVisitor extends ModifierVisitor<Void> {
       }
     }
     return false;
+  }
+
+  private @Nullable MethodReferenceExpr getMethodReferenceInMethodCall (MethodCallExpr method) {
+    for (Expression expression: method.getArguments()) {
+      if (expression.isMethodReferenceExpr()) {
+        return expression.asMethodReferenceExpr();
+      }
+    }
+    return null;
+  }
+
+  private ResolvedMethodDeclaration getResolvedMethodDeclarationFromeMethodReference (MethodReferenceExpr method) {
+    Expression scope = method.getScope();
+    try {
+      for (ResolvedMethodDeclaration methodDeclared: scope.calculateResolvedType().asReferenceType().getAllMethods()) {
+        if (methodDeclared.getName().equals(method.toString())) {
+          return methodDeclared;
+        }
+      }
+    }
+    catch (Exception e) {
+      throw new Error();
+    }
   }
 
   /**
@@ -1586,20 +1613,24 @@ public class UnsolvedSymbolVisitor extends ModifierVisitor<Void> {
    *     files.
    */
   public boolean isFromAJarFile(Expression expr) {
-    String className;
-    if (expr instanceof MethodCallExpr) {
-      className =
-          ((MethodCallExpr) expr).resolve().getPackageName()
-              + "."
-              + ((MethodCallExpr) expr).resolve().getClassName();
-    } else if (expr instanceof ObjectCreationExpr) {
-      String shortName = ((ObjectCreationExpr) expr).getTypeAsString();
-      String packageName = classAndPackageMap.get(shortName);
-      className = packageName + "." + shortName;
-    } else {
-      throw new RuntimeException("Unexpected call: " + expr + ". Contact developers!");
+    try {
+      String className;
+      if (expr instanceof MethodCallExpr) {
+        className =
+            ((MethodCallExpr) expr).resolve().getPackageName()
+                + "."
+                + ((MethodCallExpr) expr).resolve().getClassName();
+      } else if (expr instanceof ObjectCreationExpr) {
+        String shortName = ((ObjectCreationExpr) expr).getTypeAsString();
+        String packageName = classAndPackageMap.get(shortName);
+        className = packageName + "." + shortName;
+      } else {
+        throw new RuntimeException("Unexpected call: " + expr + ". Contact developers!");
+      }
+      return classesFromJar.contains(className);
+    } catch (Exception e) {
+      return false;
     }
-    return classesFromJar.contains(className);
   }
 
   /**
@@ -1901,7 +1932,7 @@ public class UnsolvedSymbolVisitor extends ModifierVisitor<Void> {
       return true;
     }
     for (Expression parameter : paraList) {
-      if (parameter.isLambdaExpr()) {
+      if (parameter.isLambdaExpr() || parameter.isMethodReferenceExpr()) {
         // Skip lambdas here and treat them specially later.
         continue;
       }
