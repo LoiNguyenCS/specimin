@@ -5,7 +5,7 @@ plugins {
     id 'maven-publish'
     id 'signing'
     id 'com.diffplug.spotless' version '6.25.0'
-    id 'org.checkerframework' version '0.6.37'
+    id 'org.checkerframework' version '0.6.38'
     id("net.ltgt.errorprone") version "3.1.0"
     id 'com.adarshr.test-logger' version '3.1.0'
 }
@@ -140,5 +140,17 @@ tasks.withType(Test).configureEach {
 test {
     testLogging {
         showStandardStreams = true
+    }
+}
+
+// To use a locally-built Checker Framework, run gradle with "-PcfLocal".
+if (project.hasProperty("cfLocal")) {
+    def cfHome = String.valueOf(System.getenv("CHECKERFRAMEWORK"))
+    dependencies {
+        compileOnly files(cfHome + "/checker/dist/checker-qual.jar")
+        testCompileOnly files(cfHome + "/checker/dist/checker-qual.jar")
+        checkerFramework files(cfHome + "/checker/dist/checker.jar")
+        // Print out the path to checker.jar for debugging
+        println "Path to Checker Framework JAR: ${cfHome}/checker/dist/checker.jar"
     }
 }
