@@ -3,6 +3,7 @@ package org.checkerframework.specimin;
 import com.github.javaparser.ast.Node;
 import com.github.javaparser.ast.body.ClassOrInterfaceDeclaration;
 import com.github.javaparser.ast.body.ConstructorDeclaration;
+import com.github.javaparser.ast.body.FieldDeclaration;
 import com.github.javaparser.ast.body.MethodDeclaration;
 import com.github.javaparser.ast.body.Parameter;
 import com.github.javaparser.ast.body.VariableDeclarator;
@@ -22,8 +23,10 @@ import com.github.javaparser.resolution.declarations.ResolvedValueDeclaration;
 import com.github.javaparser.resolution.types.ResolvedReferenceType;
 import com.github.javaparser.resolution.types.ResolvedType;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
@@ -76,6 +79,12 @@ public class TargetMethodFinderVisitor extends ModifierVisitor<Void> {
    * usually indicates an error.
    */
   private final List<String> unfoundMethods;
+
+  /**
+   * Maintains a mapping between fields initialized by method calls, associating each field name
+   * with the corresponding method call.
+   */
+  private final Map<String, MethodCallExpr> initializedFieldsAndMethods = new HashMap<>();
 
   /**
    * Create a new target method finding visitor.
@@ -152,6 +161,20 @@ public class TargetMethodFinderVisitor extends ModifierVisitor<Void> {
       this.classFQName = "";
     }
     return result;
+  }
+
+  @Override
+  public Visitable visit(FieldDeclaration field, Void p) {
+    for (VariableDeclarator var : field.getVariables()) {
+      Optional<Expression> possibleInitializer = var.getInitializer();
+      if (possibleInitializer.isPresent()) {
+        Expression initializer = possibleInitializer.get();
+        if (initializer.isMethodCallExpr()) {
+          initializedFieldsAndMethods.put(var.getName().asString(), initializer.asMethodCallExpr());
+        }
+      }
+    }
+    return super.visit(field, p);
   }
 
   @Override
@@ -273,6 +296,12 @@ public class TargetMethodFinderVisitor extends ModifierVisitor<Void> {
   public Visitable visit(FieldAccessExpr expr, Void p) {
     if (insideTargetMethod) {
       usedMembers.add(classFQName + "#" + expr.getName().asString());
+      if (initializedFieldsAndMethods.containsKey(expr.getNameAsString())) {
+        MethodCallExpr initCall = initializedFieldsAndMethods.get(expr.getNameAsString());
+        usedMembers.add(initCall.resolve().getQualifiedSignature());
+        usedClass.add(
+            initCall.resolve().getPackageName() + "." + initCall.resolve().getClassName());
+      }
     }
     Expression caller = expr.getScope();
     if (caller instanceof SuperExpr) {
@@ -290,6 +319,13 @@ public class TargetMethodFinderVisitor extends ModifierVisitor<Void> {
       ResolvedValueDeclaration exprDecl = expr.resolve();
       if (exprDecl instanceof ResolvedFieldDeclaration) {
         usedClass.add(exprDecl.asField().declaringType().getQualifiedName());
+
+        if (initializedFieldsAndMethods.containsKey(expr.getNameAsString())) {
+          MethodCallExpr initCall = initializedFieldsAndMethods.get(expr.getNameAsString());
+          usedMembers.add(initCall.resolve().getQualifiedSignature());
+          usedClass.add(
+              initCall.resolve().getPackageName() + "." + initCall.resolve().getClassName());
+        }
       }
     }
     return super.visit(expr, p);
